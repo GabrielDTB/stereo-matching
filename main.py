@@ -2,6 +2,8 @@ import cv2
 import zipfile
 import numpy as np
 import matplotlib.pyplot as plt
+from numpy.testing import assert_array_equal
+import unittest
 
 def extract_files(filename):
     with zipfile.ZipFile(filename, "r") as zip:
@@ -25,6 +27,80 @@ def rank_transform(image, window_size=5):
             transformed_image[i-pad_size, j-pad_size] = rank
 
     return transformed_image
+
+class TestRankTransform(unittest.TestCase):
+
+    def do_test(self, image, expected, window_size):
+        image = np.array(image)
+        expected = np.array(expected)
+        result = rank_transform(image, window_size)
+        assert_array_equal(result, expected)
+
+    def test_single_tile(self):
+        self.do_test(
+            image = [
+                [0]
+            ],
+            expected = [
+                [0]
+            ],
+            window_size = 1
+        )
+        
+    def test_single_pixel_window(self):
+        self.do_test(
+            image = [
+                [1],
+                [2],
+                [3]
+            ],
+            expected = [
+                [0],
+                [0],
+                [0]
+            ],
+            window_size = 1
+        )
+
+    def test_skinny_array(self):
+        self.do_test(
+            image = [
+                [1],
+                [2],
+                [3]
+            ],
+            expected = [
+                [0],
+                [1],
+                [2]
+            ],
+            window_size = 3
+        )
+
+    def test_uniform_window(self):
+        image = np.ones((5, 5))
+        result = rank_transform(image, window_size=3)
+        expected = 4 * np.ones((5, 5))  # Each pixel is greater than 4 others in the window
+        self.assertTrue(np.array_equal(result, expected))
+
+    def test_simple_gradient(self):
+        image = np.tile(np.arange(0, 256, 256/5), (5, 1))
+        result = rank_transform(image, window_size=3)
+        expected = np.array([
+            [0, 1, 2, 3, 4],
+            [0, 1, 2, 3, 4],
+            [0, 1, 2, 3, 4],
+            [0, 1, 2, 3, 4],
+            [0, 1, 2, 3, 4]
+        ])
+        self.assertTrue(np.array_equal(result, expected))
+
+    def test_edge_handling(self):
+        image = np.ones((5, 5))
+        result = rank_transform(image, window_size=3)
+        expected = 4 * np.ones((5, 5))
+        # Edges should be handled correctly, and in this case, they should have the same rank as the center pixels
+        self.assertTrue(np.array_equal(result, expected))
 
 def disparity_maps(rank_left, rank_right, window_size, disparity_range=64):
     pad_size = window_size // 2
