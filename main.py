@@ -23,7 +23,10 @@ def rank_transform(image, window_size=5):
         for j in range(pad_size, pad_size + image.shape[1]):
             center_pixel = pad_image[i, j]
             neighbors = pad_image[i-pad_size: i+pad_size+1, j-pad_size: j+pad_size+1].flatten()
-            rank = np.sum(neighbors < center_pixel)
+            rank = 0
+            for neighbor in neighbors:
+                if neighbor < center_pixel:
+                    rank += 1
             transformed_image[i-pad_size, j-pad_size] = rank
 
     return transformed_image
