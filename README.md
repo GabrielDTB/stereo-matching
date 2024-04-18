@@ -1,1 +1,0 @@
-# Stereo-Matching-Confidence
