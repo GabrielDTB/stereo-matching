@@ -1,72 +1,106 @@
 import cv2
 import numpy as np
+import unittest
 
-def process_bytes(left_image, right_image):
-    cv2.imshow("Loaded Left Image", left_image)
-    cv2.imshow("Loaded Right Image", right_image)
+def show_images(left_image, right_image):
+    cv2.imshow("Left Image", left_image)
+    cv2.imshow("Right Image", right_image)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
-def get_window_values(image, center_x, center_y, window_size):
-    window_values = []
-    half_size = window_size // 2
+def neighbors(image, center_x, center_y, padding):
+    return image[
+        center_y - padding : center_y + padding + 1,
+        center_x - padding : center_x + padding + 1
+    ].flatten()
 
-    for i in range(-half_size, half_size + 1):
-        for j in range(-half_size, half_size + 1):
-            window_values.append(image[center_y + i, center_x + j])
+def abs_dif(x, y):
+    if x > y:
+        return x - y
+    else:
+        return y - x
 
-    return window_values
-
-def vector_subtract(v1, v2):
-    return [x - y for x, y in zip(v1, v2)]
-
-def vector_abs(v):
-    return [abs(x) for x in v]
-
-def vec_sum(v):
-    return sum(v)
+def vec_abs_dif(x, y):
+    return np.vectorize(abs_dif)(x, y)
 
 def main():
-    left_image = cv2.imread("teddyL.pgm", cv2.IMREAD_GRAYSCALE)
-    right_image = cv2.imread("teddyR.pgm", cv2.IMREAD_GRAYSCALE)
-    if left_image is None or right_image is None:
-        print("Could not open or find the two images")
+    left_image_name = "teddyL.pgm"
+    right_image_name = "teddyR.pgm"
+
+    left_image = cv2.imread(left_image_name, cv2.IMREAD_GRAYSCALE)
+    right_image = cv2.imread(right_image_name, cv2.IMREAD_GRAYSCALE)
+
+    if left_image is None:
+        print("Couldn't find", left_image_name)
+        return
+    if right_image is None:
+        print("Couldn't find", right_image_name)
+        return
+    if left_image.shape != right_image.shape:
+        print("Images have different sizes", left_image.shape, right_image.shape)
         return
 
-    process_bytes(left_image, right_image)
+    # show_images(left_image, right_image)
 
     window_size = 5
-    half_size = 2
+    padding = window_size // 2
     max_disparity = 64
 
-    padded_left_image = cv2.copyMakeBorder(left_image, half_size, half_size, half_size, half_size, cv2.BORDER_CONSTANT, value=-1)
-    padded_right_image = cv2.copyMakeBorder(right_image, half_size, half_size, half_size, half_size, cv2.BORDER_CONSTANT, value=-1)
+    padded_left_image = cv2.copyMakeBorder(
+        left_image,
+        padding,
+        padding,
+        padding,
+        padding,
+        cv2.BORDER_CONSTANT,
+        value=-1
+    )
+    padded_right_image = cv2.copyMakeBorder(
+        right_image,
+        padding,
+        padding,
+        padding,
+        padding,
+        cv2.BORDER_CONSTANT,
+        value=-1
+    )
 
-    disparity_map = np.zeros_like(left_image, dtype=np.uint8)
-    for y in range(half_size, left_image.shape[0] - half_size):
-        for x in range(half_size, left_image.shape[1] - half_size):
+    print(left_image.shape)
+
+    sad = sum(vec_abs_dif(
+        neighbors(padded_left_image, padding, padding, padding),
+        neighbors(padded_right_image, padding, padding, padding)
+    ))
+    print(sad)
+
+
+    disparity_map = np.zeros_like(left_image, dtype=np.uint16)
+    counter = 0
+
+    for y in range(padding, padded_left_image.shape[0] - padding):
+        for x in range(padding, padded_left_image.shape[1] - padding):
             min_sad = float('inf')
             best_disparity = 0
-            left_neighbors = get_window_values(padded_left_image, x, y, window_size)
+            left_neighbors = neighbors(padded_left_image, x, y, padding)
 
-            for r in range(half_size, right_image.shape[1] - half_size):
-                right_neighbors = get_window_values(padded_right_image, r, y, window_size)
-                sub = vector_subtract(left_neighbors, right_neighbors)
-                sub = vector_abs(sub)
-                sad = vec_sum(sub)
+            for r in range(padding, padded_right_image.shape[1] - padding):
+                right_neighbors = neighbors(padded_right_image, r, y, padding)
+                sad = sum(vec_abs_dif(
+                    left_neighbors, right_neighbors
+                ))
+                counter += 1
+                if counter % 100000 == 0:
+                    print(counter)
 
                 if sad < min_sad:
                     min_sad = sad
-                    best_disparity = r - x
+                    best_disparity = abs(int(r) - x)
 
-            best_disparity = int((best_disparity * 64) / max_disparity)
+            disparity_map[y - padding, x - padding] = best_disparity
 
-            disparity_map[y - half_size, x - half_size] = best_disparity
-
-    cv2.imshow("Disparity Maps", disparity_map)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    # cv2.imshow("Disparity Maps", disparity_map)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     main()
-
