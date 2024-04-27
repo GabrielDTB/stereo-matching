@@ -40,7 +40,7 @@ def main():
         print("Images have different sizes", left_image.shape, right_image.shape)
         return
 
-    # show_images(left_image, right_image)
+    show_images(left_image, right_image)
 
     window_size = 5
     padding = window_size // 2
@@ -98,9 +98,9 @@ def main():
 
             disparity_map[y - padding, x - padding] = best_disparity
 
-    # cv2.imshow("Disparity Maps", disparity_map)
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
+    cv2.imshow("Disparity Maps", disparity_map)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     main()
