@@ -17,12 +17,50 @@ where
 }
 
 #[inline]
-fn calculate_sad<'a, I, T>(flat1: I, flat2: I) -> usize
-where
-    I: Iterator<Item = &'a T>,
-    T: 'a + Into<usize> + PartialOrd + std::ops::Sub<Output = T> + Copy,
-{
-    flat1.zip(flat2).map(|(&a, &b)| abs_dif(a, b).into()).sum()
+fn calculate_sad(
+    left: &ImageBuffer<Luma<u8>, Vec<u8>>,
+    right: &ImageBuffer<Luma<u8>, Vec<u8>>,
+    left_x: u32,
+    right_x: u32,
+    y: u32,
+    padding: i64,
+) -> usize {
+    let mut sad: usize = 0;
+    for offset_x in -padding..=padding {
+        for offset_y in -padding..=padding {
+            let final_left_x = left_x as i64 + offset_x;
+            let final_right_x = right_x as i64 + offset_x;
+            let final_y = y as i64 + offset_y;
+
+            let left_pixel;
+            let right_pixel;
+
+            if final_left_x < 0 || final_left_x >= left.width() as i64 {
+                left_pixel = 0;
+            } else if final_y < 0 || final_y >= left.height() as i64 {
+                left_pixel = 0;
+            } else {
+                left_pixel = left.get_pixel(final_left_x as u32, final_y as u32).0[0];
+            }
+
+            if final_right_x < 0 || final_right_x >= right.width() as i64 {
+                right_pixel = 0;
+            } else if final_y < 0 || final_y >= right.height() as i64 {
+                right_pixel = 0;
+            } else {
+                right_pixel = right.get_pixel(final_right_x as u32, final_y as u32).0[0];
+            }
+
+            let ad = if left_pixel > right_pixel {
+                left_pixel - right_pixel
+            } else {
+                right_pixel - left_pixel
+            };
+
+            sad += ad as usize;
+        }
+    }
+    sad
 }
 
 fn main() -> Result<()> {
@@ -46,45 +84,7 @@ fn main() -> Result<()> {
                     (0..right.width())
                         .into_iter()
                         .fold((usize::MAX, 0), |(best_sad, best_disparity), right_x| {
-                            let mut sad: usize = 0;
-                            for offset_x in -padding..=padding {
-                                for offset_y in -padding..=padding {
-                                    let final_left_x = left_x as i64 + offset_x;
-                                    let final_right_x = right_x as i64 + offset_x;
-                                    let final_y = y as i64 + offset_y;
-
-                                    let left_pixel;
-                                    let right_pixel;
-
-                                    if final_left_x < 0 || final_left_x >= left.width() as i64 {
-                                        left_pixel = 0;
-                                    } else if final_y < 0 || final_y >= left.height() as i64 {
-                                        left_pixel = 0;
-                                    } else {
-                                        left_pixel = left
-                                            .get_pixel(final_left_x as u32, final_y as u32)
-                                            .0[0];
-                                    }
-
-                                    if final_right_x < 0 || final_right_x >= right.width() as i64 {
-                                        right_pixel = 0;
-                                    } else if final_y < 0 || final_y >= right.height() as i64 {
-                                        right_pixel = 0;
-                                    } else {
-                                        right_pixel = right
-                                            .get_pixel(final_right_x as u32, final_y as u32)
-                                            .0[0];
-                                    }
-
-                                    let ad = if left_pixel > right_pixel {
-                                        left_pixel - right_pixel
-                                    } else {
-                                        right_pixel - left_pixel
-                                    };
-
-                                    sad += ad as usize;
-                                }
-                            }
+                            let sad = calculate_sad(&left, &right, left_x, right_x, y, padding);
                             if sad < best_sad {
                                 (sad, abs_dif(left_x, right_x))
                             } else {
