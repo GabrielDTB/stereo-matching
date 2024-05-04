@@ -9,6 +9,7 @@ edition = "2021"
 image = "0.25.1"
 show-image = "0.14.0"
 rayon = "1.10.0"
+anyhow = "1.0.82"
 
 [profile.dev]
 opt-level = 0
