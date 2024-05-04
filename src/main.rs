@@ -139,16 +139,11 @@ fn calculate_disparities(
         .collect::<Vec<_>>())
 }
 
-fn scale_disparities(disparities: Vec<u64>) -> Result<Vec<u8>> {
-    let max_value = disparities
+fn scale_disparities(disparities: Vec<u64>) -> Vec<u8> {
+    disparities
         .iter()
-        .max()
-        .context("Disparity array is empty.")?;
-
-    Ok(disparities
-        .iter()
-        .map(|i| ((i * u8::MAX as u64) / max_value) as u8)
-        .collect::<Vec<u8>>())
+        .map(|i| std::cmp::min(i * 4, 255) as u8)
+        .collect::<Vec<u8>>()
 }
 
 fn open_images(
@@ -179,7 +174,7 @@ fn save_disparity_map_as_image(
 fn main() -> Result<()> {
     let (left_image, right_image) = open_images("teddyL.pgm", "teddyR.pgm")?;
     let disparities = calculate_disparities(&left_image, &right_image, 3)?;
-    let scaled_disparities = scale_disparities(disparities)?;
+    let scaled_disparities = scale_disparities(disparities);
     save_disparity_map_as_image(
         scaled_disparities,
         left_image.width(),
