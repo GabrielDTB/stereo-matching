@@ -1,13 +1,17 @@
 use anyhow::Context;
 use anyhow::{ensure, Result};
 use image::io::Reader as ImageReader;
+use image::ImageBuffer;
 use image::Luma;
-use image::{GenericImageView, ImageBuffer};
 use rayon::prelude::*;
 
+fn translate_coordinates(x: i64, y: i64, height: i64) -> usize {
+    (x + (y * height)) as usize
+}
+
 fn calculate_sad(
-    left: &ImageBuffer<Luma<u8>, Vec<u8>>,
-    right: &ImageBuffer<Luma<u8>, Vec<u8>>,
+    left: &[u8],
+    right: &[u8],
     padding: i64,
     height: i64,
     left_width: i64,
@@ -31,9 +35,7 @@ fn calculate_sad(
             } else if final_y < 0 || final_y >= height {
                 left_pixel = 0;
             } else {
-                unsafe {
-                    left_pixel = left.unsafe_get_pixel(final_left_x as u32, final_y as u32).0[0];
-                }
+                left_pixel = left[translate_coordinates(final_left_x, final_y, height)];
             }
 
             if final_right_x < 0 || final_right_x >= right_width {
@@ -41,11 +43,7 @@ fn calculate_sad(
             } else if final_y < 0 || final_y >= height {
                 right_pixel = 0;
             } else {
-                unsafe {
-                    right_pixel = right
-                        .unsafe_get_pixel(final_right_x as u32, final_y as u32)
-                        .0[0];
-                }
+                right_pixel = right[translate_coordinates(final_right_x, final_y, height)];
             }
 
             sad += left_pixel.abs_diff(right_pixel) as u64;
@@ -55,8 +53,8 @@ fn calculate_sad(
 }
 
 fn calculate_disparity(
-    left: &ImageBuffer<Luma<u8>, Vec<u8>>,
-    right: &ImageBuffer<Luma<u8>, Vec<u8>>,
+    left: &[u8],
+    right: &[u8],
     padding: i64,
     height: i64,
     left_width: i64,
@@ -64,7 +62,7 @@ fn calculate_disparity(
     y: i64,
     left_x: i64,
 ) -> u64 {
-    (0..right.width() as i64)
+    (0..right_width as i64)
         .fold((u64::MAX, 0), |(best_sad, best_disparity), right_x| {
             let sad = calculate_sad(
                 left,
@@ -87,15 +85,15 @@ fn calculate_disparity(
 }
 
 fn calculate_disparities_across_y(
-    left: &ImageBuffer<Luma<u8>, Vec<u8>>,
-    right: &ImageBuffer<Luma<u8>, Vec<u8>>,
+    left: &[u8],
+    right: &[u8],
     padding: i64,
     height: i64,
     left_width: i64,
     right_width: i64,
     y: i64,
 ) -> Vec<u64> {
-    (0..left.width() as i64)
+    (0..left_width as i64)
         .map(|left_x| {
             calculate_disparity(
                 left,
@@ -122,14 +120,14 @@ fn calculate_disparities(
     );
 
     let padding = window_size / 2;
-    // let buffer = left.as_raw().clone();
+    let [left_buffer, right_buffer] = [left, right].map(|i| i.as_raw().clone());
 
     Ok((0..left.height() as i64)
         .into_par_iter()
         .map(|y| {
             calculate_disparities_across_y(
-                left,
-                right,
+                &left_buffer,
+                &right_buffer,
                 padding,
                 left.height() as i64,
                 left.width() as i64,
