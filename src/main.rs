@@ -1,115 +1,201 @@
+use anyhow::Context;
+use anyhow::{ensure, Result};
 use image::io::Reader as ImageReader;
 use image::ImageBuffer;
 use image::Luma;
 use rayon::prelude::*;
 
-fn main() {
-    // let img = ImageReader::open("disp2.pgm").unwrap().decode().unwrap();
-    // img.save("disp2.jpg").unwrap();
-    let left = ImageReader::open("teddyL.pgm")
-        .unwrap()
-        .decode()
-        .unwrap()
-        .into_luma8();
-    let right = ImageReader::open("teddyR.pgm")
-        .unwrap()
-        .decode()
-        .unwrap()
-        .into_luma8();
-
-    let mut correspondences = vec![];
-    let mut disparities = vec![];
-    println!("{disparities:#?}");
-
-    let padding: i64 = 1;
-
-    let thread_results: Vec<(Vec<u32>, Vec<u32>)> = (0..left.height())
-        .into_par_iter()
-        .map(|y| {
-            let mut disparities_thread = vec![];
-            let mut correspondences_thread = vec![];
-            println!("{y}");
-            for left_x in 0..left.width() {
-                let mut best_sad = u32::MAX;
-                let mut best_x = 449;
-                for right_x in 0..right.width() {
-                    let mut sad: u32 = 0;
-                    for offset_x in -padding..=padding {
-                        for offset_y in -padding..=padding {
-                            let final_left_x = left_x as i64 + offset_x;
-                            let final_right_x = right_x as i64 + offset_x;
-                            let final_y = y as i64 + offset_y;
-
-                            let left_pixel;
-                            let right_pixel;
-
-                            if final_left_x < 0 || final_left_x >= left.width() as i64 {
-                                left_pixel = 0;
-                            } else if final_y < 0 || final_y >= left.height() as i64 {
-                                left_pixel = 0;
-                            } else {
-                                left_pixel =
-                                    left.get_pixel(final_left_x as u32, final_y as u32).0[0];
-                            }
-
-                            if final_right_x < 0 || final_right_x >= right.width() as i64 {
-                                right_pixel = 0;
-                            } else if final_y < 0 || final_y >= right.height() as i64 {
-                                right_pixel = 0;
-                            } else {
-                                right_pixel =
-                                    right.get_pixel(final_right_x as u32, final_y as u32).0[0];
-                            }
-
-                            let ad = if left_pixel > right_pixel {
-                                left_pixel - right_pixel
-                            } else {
-                                right_pixel - left_pixel
-                            };
-
-                            sad += ad as u32;
-                        }
-                    }
-                    if sad < best_sad {
-                        best_sad = sad;
-                        best_x = right_x;
-                    }
-                }
-                correspondences_thread.push(best_x);
-                disparities_thread.push(if best_x > left_x {
-                    best_x - left_x
-                } else {
-                    left_x - best_x
-                });
-            }
-            (correspondences_thread, disparities_thread)
-        }) // What is this formatting? lol
-        .collect();
-
-    for (correspondences_thread, disparities_thread) in thread_results {
-        correspondences.extend(correspondences_thread);
-        disparities.extend(disparities_thread);
-    }
-
-    println!("{disparities:#?}");
-    let max_value = disparities.iter().max().unwrap();
-    let scaled_disparities = disparities
-        .iter()
-        .map(|i| ((i * 255) / max_value) as u8)
-        .collect::<Vec<u8>>();
-    let img_edited: ImageBuffer<Luma<u8>, Vec<u8>> =
-        ImageBuffer::from_vec(left.width(), left.height(), scaled_disparities).unwrap();
-    img_edited.save("disparities.png").unwrap();
+fn point_to_index(x: i64, y: i64, width: i64) -> usize {
+    (x + (y * width)) as usize
 }
 
-// let img = ImageReader::open("teddyL.pgm").unwrap().decode().unwrap();
-// let mut array = img.as_bytes().to_vec();
-// let width = img.width();
-// let height = img.height();
-// for i in 0..100 {
-//     array[i] = 0;
-// }
-// let img_edited: ImageBuffer<Luma<u8>, Vec<u8>> =
-//     ImageBuffer::from_vec(width, height, array).unwrap();
-// img_edited.save("teddyL_edited.jpg").unwrap();
-// img.save("teddyL.jpg").unwrap();
+fn calculate_ad(
+    left: &[u8],
+    right: &[u8],
+    height: i64,
+    left_width: i64,
+    right_width: i64,
+    y: i64,
+    left_x: i64,
+    right_x: i64,
+) -> u64 {
+    match (
+        y >= 0 && y < height,
+        left_x >= 0 && left_x < left_width,
+        right_x >= 0 && right_x < right_width,
+    ) {
+        (true, true, false) => left[point_to_index(left_x, y, left_width)] as u64,
+        (true, false, true) => right[point_to_index(right_x, y, right_width)] as u64,
+        (true, true, true) => left[point_to_index(left_x, y, left_width)]
+            .abs_diff(right[point_to_index(right_x, y, right_width)])
+            as u64,
+        _ => 0,
+    }
+}
+
+fn calculate_sad(
+    left: &[u8],
+    right: &[u8],
+    padding: i64,
+    height: i64,
+    left_width: i64,
+    right_width: i64,
+    y: i64,
+    left_x: i64,
+    right_x: i64,
+) -> u64 {
+    let mut sad = 0;
+    for (final_left_x, final_right_x) in
+        ((left_x - padding)..(left_x + padding)).zip((right_x - padding)..(right_x + padding))
+    {
+        for final_y in (y - padding)..(y + padding) {
+            sad += calculate_ad(
+                left,
+                right,
+                height,
+                left_width,
+                right_width,
+                final_y,
+                final_left_x,
+                final_right_x,
+            );
+        }
+    }
+    sad
+}
+
+fn calculate_disparity(
+    left: &[u8],
+    right: &[u8],
+    padding: i64,
+    height: i64,
+    left_width: i64,
+    right_width: i64,
+    y: i64,
+    left_x: i64,
+) -> u64 {
+    (0..right_width as i64)
+        .fold((u64::MAX, 0), |(best_sad, best_disparity), right_x| {
+            let sad = calculate_sad(
+                left,
+                right,
+                padding,
+                height,
+                left_width,
+                right_width,
+                y,
+                left_x,
+                right_x,
+            );
+            if sad < best_sad {
+                (sad, left_x.abs_diff(right_x))
+            } else {
+                (best_sad, best_disparity)
+            }
+        })
+        .1
+}
+
+fn calculate_disparities_across_y(
+    left: &[u8],
+    right: &[u8],
+    padding: i64,
+    height: i64,
+    left_width: i64,
+    right_width: i64,
+    y: i64,
+) -> Vec<u64> {
+    (0..left_width as i64)
+        .map(|left_x| {
+            calculate_disparity(
+                left,
+                right,
+                padding,
+                height,
+                left_width,
+                right_width,
+                y,
+                left_x,
+            )
+        })
+        .collect::<Vec<_>>()
+}
+
+fn calculate_disparities(
+    left: &ImageBuffer<Luma<u8>, Vec<u8>>,
+    right: &ImageBuffer<Luma<u8>, Vec<u8>>,
+    window_size: i64,
+) -> Result<Vec<u64>> {
+    ensure!(
+        left.height() == right.height(),
+        "Image heights must be equal."
+    );
+    ensure!(window_size % 2 == 1, "Window size must be odd.");
+
+    let padding = window_size / 2;
+    let height = left.height() as i64;
+    let [left_width, right_width] = [left, right].map(|i| i.width() as i64);
+
+    let [left_buffer, right_buffer] = [left, right].map(|i| i.as_raw());
+
+    Ok((0..height as i64)
+        .into_par_iter()
+        .flat_map(|y| {
+            calculate_disparities_across_y(
+                &left_buffer,
+                &right_buffer,
+                padding,
+                height,
+                left_width,
+                right_width,
+                y,
+            )
+        })
+        .collect::<Vec<_>>())
+}
+
+fn scale_disparities(disparities: &Vec<u64>) -> Vec<u8> {
+    disparities
+        .iter()
+        .map(|&i| std::cmp::min(i * 4, 255) as u8)
+        .collect::<Vec<_>>()
+}
+
+fn open_images(
+    left_path: &str,
+    right_path: &str,
+) -> Result<(
+    ImageBuffer<Luma<u8>, Vec<u8>>,
+    ImageBuffer<Luma<u8>, Vec<u8>>,
+)> {
+    Ok((
+        ImageReader::open(left_path)?.decode()?.into_luma8(),
+        ImageReader::open(right_path)?.decode()?.into_luma8(),
+    ))
+}
+
+fn save_disparity_map_as_image(
+    scaled_disparities: Vec<u8>,
+    width: u32,
+    height: u32,
+    filename: &str,
+) -> Result<()> {
+    let image: ImageBuffer<Luma<u8>, Vec<u8>> =
+        ImageBuffer::from_vec(width, height, scaled_disparities)
+            .context("Failed to make image buffer from disparity map.")?;
+    Ok(image.save(filename)?)
+}
+
+fn main() -> Result<()> {
+    let (left_image, right_image) = open_images("teddyL.pgm", "teddyR.pgm")?;
+    let disparities = calculate_disparities(&left_image, &right_image, 15)?;
+    let scaled_disparities = scale_disparities(&disparities);
+    save_disparity_map_as_image(
+        scaled_disparities,
+        left_image.width(),
+        left_image.height(),
+        "disparities.png",
+    )?;
+
+    Ok(())
+}
