@@ -5,8 +5,32 @@ use image::ImageBuffer;
 use image::Luma;
 use rayon::prelude::*;
 
-fn translate_coordinates(x: i64, y: i64, height: i64) -> usize {
-    (x + (y * height)) as usize
+fn point_to_index(x: i64, y: i64, width: i64) -> usize {
+    (x + (y * width)) as usize
+}
+
+fn calculate_ad(
+    left: &[u8],
+    right: &[u8],
+    height: i64,
+    left_width: i64,
+    right_width: i64,
+    y: i64,
+    left_x: i64,
+    right_x: i64,
+) -> u64 {
+    match (
+        y >= 0 && y < height,
+        left_x >= 0 && left_x < left_width,
+        right_x >= 0 && right_x < right_width,
+    ) {
+        (true, true, false) => left[point_to_index(left_x, y, left_width)] as u64,
+        (true, false, true) => right[point_to_index(right_x, y, right_width)] as u64,
+        (true, true, true) => left[point_to_index(left_x, y, left_width)]
+            .abs_diff(right[point_to_index(right_x, y, right_width)])
+            as u64,
+        _ => 0,
+    }
 }
 
 fn calculate_sad(
@@ -21,32 +45,20 @@ fn calculate_sad(
     right_x: i64,
 ) -> u64 {
     let mut sad = 0;
-    // for (offset_x, offset_y) in iproduct!(-padding..=padding, -padding..=padding) {
-    // for offset_x in -padding..padding {
     for (final_left_x, final_right_x) in
-        ((-padding + left_x)..(padding + left_x)).zip((-padding + right_x)..(padding + right_x))
+        ((left_x - padding)..(left_x + padding)).zip((right_x - padding)..(right_x + padding))
     {
-        for final_y in (-padding + y)..(padding + y) {
-            let left_pixel;
-            let right_pixel;
-
-            if final_left_x < 0 || final_left_x >= left_width {
-                left_pixel = 0;
-            } else if final_y < 0 || final_y >= height {
-                left_pixel = 0;
-            } else {
-                left_pixel = left[translate_coordinates(final_left_x, final_y, height)];
-            }
-
-            if final_right_x < 0 || final_right_x >= right_width {
-                right_pixel = 0;
-            } else if final_y < 0 || final_y >= height {
-                right_pixel = 0;
-            } else {
-                right_pixel = right[translate_coordinates(final_right_x, final_y, height)];
-            }
-
-            sad += left_pixel.abs_diff(right_pixel) as u64;
+        for final_y in (y - padding)..(y + padding) {
+            sad += calculate_ad(
+                left,
+                right,
+                height,
+                left_width,
+                right_width,
+                final_y,
+                final_left_x,
+                final_right_x,
+            );
         }
     }
     sad
@@ -118,32 +130,35 @@ fn calculate_disparities(
         left.height() == right.height(),
         "Image heights must be equal."
     );
+    ensure!(window_size % 2 == 1, "Window size must be odd.");
 
     let padding = window_size / 2;
-    let [left_buffer, right_buffer] = [left, right].map(|i| i.as_raw().clone());
+    let height = left.height() as i64;
+    let [left_width, right_width] = [left, right].map(|i| i.width() as i64);
 
-    Ok((0..left.height() as i64)
+    let [left_buffer, right_buffer] = [left, right].map(|i| i.as_raw());
+
+    Ok((0..height as i64)
         .into_par_iter()
-        .map(|y| {
+        .flat_map(|y| {
             calculate_disparities_across_y(
                 &left_buffer,
                 &right_buffer,
                 padding,
-                left.height() as i64,
-                left.width() as i64,
-                right.width() as i64,
+                height,
+                left_width,
+                right_width,
                 y,
             )
         })
-        .flatten()
         .collect::<Vec<_>>())
 }
 
-fn scale_disparities(disparities: Vec<u64>) -> Vec<u8> {
+fn scale_disparities(disparities: &Vec<u64>) -> Vec<u8> {
     disparities
         .iter()
-        .map(|i| std::cmp::min(i * 4, 255) as u8)
-        .collect::<Vec<u8>>()
+        .map(|&i| std::cmp::min(i * 4, 255) as u8)
+        .collect::<Vec<_>>()
 }
 
 fn open_images(
@@ -173,8 +188,8 @@ fn save_disparity_map_as_image(
 
 fn main() -> Result<()> {
     let (left_image, right_image) = open_images("teddyL.pgm", "teddyR.pgm")?;
-    let disparities = calculate_disparities(&left_image, &right_image, 3)?;
-    let scaled_disparities = scale_disparities(disparities);
+    let disparities = calculate_disparities(&left_image, &right_image, 15)?;
+    let scaled_disparities = scale_disparities(&disparities);
     save_disparity_map_as_image(
         scaled_disparities,
         left_image.width(),
