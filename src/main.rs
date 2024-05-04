@@ -4,7 +4,26 @@ use image::ImageBuffer;
 use image::Luma;
 use rayon::prelude::*;
 
+#[inline]
+fn abs_dif<T>(v1: T, v2: T) -> T
+where
+    T: PartialOrd + std::ops::Sub<Output = T> + Copy,
+{
+    if v1 > v2 {
+        v1 - v2
+    } else {
+        v2 - v1
+    }
+}
 
+#[inline]
+fn calculate_sad<'a, I, T>(flat1: I, flat2: I) -> usize
+where
+    I: Iterator<Item = &'a T>,
+    T: 'a + Into<usize> + PartialOrd + std::ops::Sub<Output = T> + Copy,
+{
+    flat1.zip(flat2).map(|(&a, &b)| abs_dif(a, b).into()).sum()
+}
 
 fn main() -> Result<()> {
     // let img = ImageReader::open("disp2.pgm").unwrap().decode().unwrap();
@@ -22,11 +41,11 @@ fn main() -> Result<()> {
         .into_par_iter()
         .map(|y| {
             (0..left.width())
-                .into_par_iter()
+                .into_iter()
                 .map(|left_x| {
-                    (0..right.width()).into_iter().fold(
-                        (usize::Max, 0) | (best_sad, best_disparity),
-                        right_x | {
+                    (0..right.width())
+                        .into_iter()
+                        .fold((usize::MAX, 0), |(best_sad, best_disparity), right_x| {
                             let mut sad: usize = 0;
                             for offset_x in -padding..=padding {
                                 for offset_y in -padding..=padding {
@@ -67,18 +86,12 @@ fn main() -> Result<()> {
                                 }
                             }
                             if sad < best_sad {
-                                (sad.
-                                if right_x > left_x {
-                                    right_x - left_x
-                                } else {
-                                    left_x - right_x
-                                })
-                            }
-                            else {
+                                (sad, abs_dif(left_x, right_x))
+                            } else {
                                 (best_sad, best_disparity)
                             }
-                        },
-                    )
+                        })
+                        .1
                 })
                 .collect::<Vec<_>>()
         })
