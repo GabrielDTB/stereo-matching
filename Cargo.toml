@@ -9,9 +9,3 @@ edition = "2021"
 image = "0.25.1"
 rayon = "1.10.0"
 anyhow = "1.0.82"
-
-[profile.dev]
-opt-level = 0
-
-[profile.release]
-opt-level = 0
