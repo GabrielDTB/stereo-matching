@@ -1,5 +1,6 @@
 use anyhow::Context;
 use anyhow::{ensure, Result};
+use clap::Parser;
 use image::io::Reader as ImageReader;
 use image::ImageBuffer;
 use image::Luma;
@@ -186,8 +187,23 @@ fn save_disparity_map_as_image(
     Ok(image.save(filename)?)
 }
 
+/// Calculates disparity map between two images
+#[derive(Parser, Debug)]
+#[command(about, long_about = None)]
+struct Args {
+    /// Path to left image
+    #[arg(long, value_name = "PATH")]
+    image_left: String,
+
+    // Path to right image
+    #[arg(long, value_name = "PATH")]
+    image_right: String,
+}
+
 fn main() -> Result<()> {
-    let (left_image, right_image) = open_images("teddyL.pgm", "teddyR.pgm")?;
+    let args = Args::parse();
+    let (left_image, right_image) =
+        open_images(args.image_left.as_str(), args.image_right.as_str())?;
     let disparities = calculate_disparities(&left_image, &right_image, 15)?;
     let scaled_disparities = scale_disparities(&disparities);
     save_disparity_map_as_image(
