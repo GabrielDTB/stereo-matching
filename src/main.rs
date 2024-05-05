@@ -184,7 +184,7 @@ fn save_disparity_map_as_image(
     let image: ImageBuffer<Luma<u8>, Vec<u8>> =
         ImageBuffer::from_vec(width, height, scaled_disparities)
             .context("Failed to make image buffer from disparity map.")?;
-    Ok(image.save(filename)?)
+    Ok(image.save_with_format(filename, image::ImageFormat::Png)?)
 }
 
 /// Calculates disparity map between two images
@@ -195,22 +195,30 @@ struct Args {
     #[arg(long, value_name = "PATH")]
     image_left: String,
 
-    // Path to right image
+    /// Path to right image
     #[arg(long, value_name = "PATH")]
     image_right: String,
+
+    /// Window size for SAD calculations
+    #[arg(long, value_name = "SIZE", default_value_t = 5)]
+    window_size: i64,
+
+    /// Path to save output image
+    #[arg(long, value_name = "PATH", default_value_t = String::from("disparities.png"))]
+    output: String,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
     let (left_image, right_image) =
         open_images(args.image_left.as_str(), args.image_right.as_str())?;
-    let disparities = calculate_disparities(&left_image, &right_image, 15)?;
+    let disparities = calculate_disparities(&left_image, &right_image, args.window_size)?;
     let scaled_disparities = scale_disparities(&disparities);
     save_disparity_map_as_image(
         scaled_disparities,
         left_image.width(),
         left_image.height(),
-        "disparities.png",
+        args.output.as_str(),
     )?;
 
     Ok(())
