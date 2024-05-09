@@ -175,6 +175,10 @@ fn open_images(
     ))
 }
 
+fn get_ground_truth_disparities(path: String) -> Result<Vec<u8>> {
+    Ok(ImageReader::open(path)?.decode()?.into_luma8().into_vec())
+}
+
 fn save_disparity_map_as_image(
     scaled_disparities: Vec<u8>,
     width: u32,
@@ -187,38 +191,70 @@ fn save_disparity_map_as_image(
     Ok(image.save_with_format(filename, image::ImageFormat::Png)?)
 }
 
+fn calculate_error_rate(disparities: &Vec<u64>, ground_truth: &Vec<u8>) -> f64 {
+    let error_count: u64 = disparities
+        .iter()
+        .zip(
+            ground_truth
+                .iter()
+                .map(|&x| (x as f64 / 4.0).round() as u64),
+        )
+        .map(|(&a, b)| if a.abs_diff(b) > 1 { 1 } else { 0 })
+        .sum();
+    error_count as f64 / disparities.len() as f64
+}
+
 /// Calculates disparity map between two images
 #[derive(Parser, Debug)]
 #[command(about, long_about = None)]
 struct Args {
     /// Path to left image
-    #[arg(long, value_name = "PATH")]
+    #[arg(index = 1, value_name = "PATH")]
     image_left: String,
 
     /// Path to right image
-    #[arg(long, value_name = "PATH")]
+    #[arg(index = 2, value_name = "PATH")]
     image_right: String,
 
     /// Window size for SAD calculations
-    #[arg(long, value_name = "SIZE", default_value_t = 5)]
+    #[arg(short = 'w', long, value_name = "SIZE", default_value_t = 5)]
     window_size: i64,
 
     /// Path to save output image
-    #[arg(long, value_name = "PATH", default_value_t = String::from("disparities.png"))]
+    #[arg(short = 'o', long, value_name = "PATH", default_value_t = String::from("disparities.png"))]
     output: String,
+
+    #[arg(short = 'g', long, value_name = "PATH")]
+    ground_truth: Option<String>,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    let output_path = args.output;
+    let ground_truth = match args.ground_truth {
+        Some(path) => Some(get_ground_truth_disparities(path)?),
+        _ => None,
+    };
+    let window_size = args.window_size;
     let (left_image, right_image) =
         open_images(args.image_left.as_str(), args.image_right.as_str())?;
+
     let disparities = calculate_disparities(&left_image, &right_image, args.window_size)?;
+
+    if let Some(ground_truth) = ground_truth {
+        let error_rate = calculate_error_rate(&disparities, &ground_truth);
+        println!(
+            "Error rate with window size {window_size}:\t{:.2}%",
+            error_rate * 100.0
+        );
+    }
+
     let scaled_disparities = scale_disparities(&disparities);
     save_disparity_map_as_image(
         scaled_disparities,
         left_image.width(),
         left_image.height(),
-        args.output.as_str(),
+        &output_path,
     )?;
 
     Ok(())
