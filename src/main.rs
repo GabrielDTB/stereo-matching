@@ -175,11 +175,17 @@ fn open_images(
     ))
 }
 
-fn get_ground_truth_disparities(path: String) -> Result<Vec<u8>> {
-    Ok(ImageReader::open(path)?.decode()?.into_luma8().into_vec())
+fn get_ground_truth_disparities(path: String) -> Result<Vec<u64>> {
+    Ok(ImageReader::open(path)?
+        .decode()?
+        .into_luma8()
+        .into_vec()
+        .into_iter()
+        .map(|v| (v as f64 / 4.0) as u64)
+        .collect::<Vec<_>>())
 }
 
-fn save_disparity_map_as_image(
+fn save_vec_as_image(
     scaled_disparities: Vec<u8>,
     width: u32,
     height: u32,
@@ -191,7 +197,7 @@ fn save_disparity_map_as_image(
     Ok(image.save_with_format(filename, image::ImageFormat::Png)?)
 }
 
-fn calculate_error_rate(disparities: &Vec<u64>, ground_truth: &Vec<u8>) -> f64 {
+fn calculate_error_rate(disparities: &Vec<u64>, ground_truth: &Vec<u64>) -> f64 {
     let error_count: u64 = disparities
         .iter()
         .zip(
@@ -202,6 +208,23 @@ fn calculate_error_rate(disparities: &Vec<u64>, ground_truth: &Vec<u8>) -> f64 {
         .map(|(&a, b)| if a.abs_diff(b) > 1 { 1 } else { 0 })
         .sum();
     error_count as f64 / disparities.len() as f64
+}
+
+fn calculate_error_map(disparities: &Vec<u64>, ground_truth: &Vec<u64>) -> Vec<bool> {
+    disparities
+        .iter()
+        .zip(ground_truth)
+        .map(|(&a, &b)| if a.abs_diff(b) > 1 { true } else { false })
+        .collect::<Vec<_>>()
+}
+
+fn calculate_in_bounds_map(ground_truth: &Vec<u64>, width: u32) -> Vec<bool> {
+    ground_truth
+        .chunks_exact(width as usize)
+        .map(|i| i.into_iter().enumerate())
+        .flatten()
+        .map(|(x, &disp)| if (x as u64) < disp { false } else { true })
+        .collect::<Vec<_>>()
 }
 
 /// Calculates disparity map between two images
@@ -233,13 +256,22 @@ fn main() -> Result<()> {
     let output_path = args.output;
     let ground_truth = match args.ground_truth {
         Some(path) => Some(get_ground_truth_disparities(path)?),
-        _ => None,
+        _ => {
+            println!("No ground truth given: some outputs will not be present.");
+            None
+        }
     };
     let window_size = args.window_size;
     let (left_image, right_image) =
         open_images(args.image_left.as_str(), args.image_right.as_str())?;
 
     let disparities = calculate_disparities(&left_image, &right_image, args.window_size)?;
+    save_vec_as_image(
+        scale_disparities(&disparities),
+        left_image.width(),
+        left_image.height(),
+        &output_path,
+    )?;
 
     if let Some(ground_truth) = ground_truth {
         let error_rate = calculate_error_rate(&disparities, &ground_truth);
@@ -247,15 +279,29 @@ fn main() -> Result<()> {
             "Error rate with window size {window_size}:\t{:.2}%",
             error_rate * 100.0
         );
-    }
+        let error_map = calculate_error_map(&disparities, &ground_truth);
 
-    let scaled_disparities = scale_disparities(&disparities);
-    save_disparity_map_as_image(
-        scaled_disparities,
-        left_image.width(),
-        left_image.height(),
-        &output_path,
-    )?;
+        save_vec_as_image(
+            error_map
+                .iter()
+                .map(|&b| if b { 255 } else { 0 })
+                .collect::<Vec<_>>(),
+            left_image.width(),
+            left_image.height(),
+            &format!("error_map_{output_path}"),
+        )?;
+
+        let bounds = calculate_in_bounds_map(&ground_truth, left_image.width());
+        save_vec_as_image(
+            bounds
+                .iter()
+                .map(|&b| if b { 255 } else { 0 })
+                .collect::<Vec<_>>(),
+            left_image.width(),
+            left_image.height(),
+            &format!("bounds_{output_path}"),
+        )?;
+    }
 
     Ok(())
 }
