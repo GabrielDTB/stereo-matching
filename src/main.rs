@@ -10,6 +10,8 @@ fn point_to_index(x: i64, y: i64, width: i64) -> usize {
     (x + (y * width)) as usize
 }
 
+/// Calculates the absolute difference between the pixels at two coordinates.
+/// If a point is out of range of the image, 0 is used for that points's value.
 fn calculate_ad(
     left: &[u8],
     right: &[u8],
@@ -34,6 +36,7 @@ fn calculate_ad(
     }
 }
 
+/// Calculates the SAD between two windows.
 fn calculate_sad(
     left: &[u8],
     right: &[u8],
@@ -65,6 +68,8 @@ fn calculate_sad(
     sad
 }
 
+/// Calculates the disparity for a pixel on the left image over a strip on the right image.
+/// TODO 1: Take in a max disparity and change the algorithm appropriately.
 fn calculate_disparity(
     left: &[u8],
     right: &[u8],
@@ -97,6 +102,7 @@ fn calculate_disparity(
         .1
 }
 
+/// Calculates disparities for a strip of pixels on the left image.
 fn calculate_disparities_across_y(
     left: &[u8],
     right: &[u8],
@@ -122,6 +128,7 @@ fn calculate_disparities_across_y(
         .collect::<Vec<_>>()
 }
 
+/// Calculates disparities for the entire left image.
 fn calculate_disparities(
     left: &ImageBuffer<Luma<u8>, Vec<u8>>,
     right: &ImageBuffer<Luma<u8>, Vec<u8>>,
@@ -155,6 +162,7 @@ fn calculate_disparities(
         .collect::<Vec<_>>())
 }
 
+/// Remove after completing TODO 1.
 fn scale_disparities(disparities: &Vec<u64>) -> Vec<u8> {
     disparities
         .iter()
@@ -197,6 +205,8 @@ fn save_vec_as_image(
     Ok(image.save_with_format(filename, image::ImageFormat::Png)?)
 }
 
+/// Calculates the error rate of computed disparities to the ground truth.
+/// A difference up to plus or minus 1 is deemed okay.
 fn calculate_error_rate(disparities: &Vec<u64>, ground_truth: &Vec<u64>) -> f64 {
     let error_count: u64 = disparities
         .iter()
@@ -210,6 +220,8 @@ fn calculate_error_rate(disparities: &Vec<u64>, ground_truth: &Vec<u64>) -> f64 
     error_count as f64 / disparities.len() as f64
 }
 
+/// Calculates the error map of computed disparities to the ground truth.
+/// A difference up to plus or minus 1 is deemed okay.
 fn calculate_error_map(disparities: &Vec<u64>, ground_truth: &Vec<u64>) -> Vec<bool> {
     disparities
         .iter()
@@ -218,6 +230,8 @@ fn calculate_error_map(disparities: &Vec<u64>, ground_truth: &Vec<u64>) -> Vec<b
         .collect::<Vec<_>>()
 }
 
+/// Calculates the map for points that can possibly have the correct disparity value,
+/// accounting for the left margin.
 fn calculate_in_bounds_map(ground_truth: &Vec<u64>, width: u32) -> Vec<bool> {
     ground_truth
         .chunks_exact(width as usize)
@@ -226,6 +240,14 @@ fn calculate_in_bounds_map(ground_truth: &Vec<u64>, width: u32) -> Vec<bool> {
         .map(|(x, &disp)| if (x as u64) < disp { false } else { true })
         .collect::<Vec<_>>()
 }
+
+/// TODO 2: Make function to calculate the not_occluded map.
+/// The algorithm for this map is to traverse the computed disparity map from right to left,
+/// mapping each point (with disparity) to a corresponding array.
+/// If the array entry that a point gets mapped to already has been mapped to, then the
+/// current point must be occluded.
+/// For efficiency, we may use the calculate_in_bounds_map to reduce the number of points we traverse.
+/// Or, we might combine the two methods.
 
 /// Calculates disparity map between two images
 #[derive(Parser, Debug)]
@@ -247,6 +269,7 @@ struct Args {
     #[arg(short = 'o', long, value_name = "PATH", default_value_t = String::from("disparities.png"))]
     output: String,
 
+    /// Path to ground truth disparity map
     #[arg(short = 'g', long, value_name = "PATH")]
     ground_truth: Option<String>,
 }
