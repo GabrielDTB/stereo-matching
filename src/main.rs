@@ -6,6 +6,8 @@ use image::ImageBuffer;
 use image::Luma;
 use rayon::prelude::*;
 
+const MAX_DISPARITY: i64 = 64;
+
 fn point_to_index(x: i64, y: i64, width: i64) -> usize {
     (x + (y * width)) as usize
 }
@@ -69,7 +71,6 @@ fn calculate_sad(
 }
 
 /// Calculates the disparity for a pixel on the left image over a strip on the right image.
-/// TODO 1: Take in a max disparity and change the algorithm appropriately.
 fn calculate_disparity(
     left: &[u8],
     right: &[u8],
@@ -77,10 +78,11 @@ fn calculate_disparity(
     height: i64,
     left_width: i64,
     right_width: i64,
+    max_disparity: i64,
     y: i64,
     left_x: i64,
 ) -> u64 {
-    (0..right_width as i64)
+    (std::cmp::max(0, left_x - max_disparity)..left_x as i64)
         .fold((u64::MAX, 0), |(best_sad, best_disparity), right_x| {
             let sad = calculate_sad(
                 left,
@@ -110,6 +112,7 @@ fn calculate_disparities_across_y(
     height: i64,
     left_width: i64,
     right_width: i64,
+    max_disparity: i64,
     y: i64,
 ) -> Vec<u64> {
     (0..left_width as i64)
@@ -121,6 +124,7 @@ fn calculate_disparities_across_y(
                 height,
                 left_width,
                 right_width,
+                max_disparity,
                 y,
                 left_x,
             )
@@ -133,6 +137,7 @@ fn calculate_disparities(
     left: &ImageBuffer<Luma<u8>, Vec<u8>>,
     right: &ImageBuffer<Luma<u8>, Vec<u8>>,
     window_size: i64,
+    max_disparity: i64,
 ) -> Result<Vec<u64>> {
     ensure!(
         left.height() == right.height(),
@@ -156,17 +161,18 @@ fn calculate_disparities(
                 height,
                 left_width,
                 right_width,
+                max_disparity,
                 y,
             )
         })
         .collect::<Vec<_>>())
 }
 
-/// Remove after completing TODO 1.
-fn scale_disparities(disparities: &Vec<u64>) -> Vec<u8> {
+fn scale_disparities_to_pixels(disparities: &Vec<u64>, max_disparity: i64) -> Vec<u8> {
     disparities
         .iter()
-        .map(|&i| std::cmp::min(i * 4, 255) as u8)
+        .map(|&i| i as f64)
+        .map(|f| (f * (255.0 / max_disparity as f64)).round() as u8)
         .collect::<Vec<_>>()
 }
 
@@ -183,13 +189,13 @@ fn open_images(
     ))
 }
 
-fn get_ground_truth_disparities(path: String) -> Result<Vec<u64>> {
+fn get_ground_truth_disparities(path: String, max_disparity: i64) -> Result<Vec<u64>> {
     Ok(ImageReader::open(path)?
         .decode()?
         .into_luma8()
         .into_vec()
         .into_iter()
-        .map(|v| (v as f64 / 4.0) as u64)
+        .map(|v| (v as f64 * (max_disparity as f64 / 255.0)).round() as u64)
         .collect::<Vec<_>>())
 }
 
@@ -278,7 +284,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
     let output_path = args.output;
     let ground_truth = match args.ground_truth {
-        Some(path) => Some(get_ground_truth_disparities(path)?),
+        Some(path) => Some(get_ground_truth_disparities(path, MAX_DISPARITY)?),
         _ => {
             println!("No ground truth given: some outputs will not be present.");
             None
@@ -288,9 +294,10 @@ fn main() -> Result<()> {
     let (left_image, right_image) =
         open_images(args.image_left.as_str(), args.image_right.as_str())?;
 
-    let disparities = calculate_disparities(&left_image, &right_image, args.window_size)?;
+    let disparities =
+        calculate_disparities(&left_image, &right_image, args.window_size, MAX_DISPARITY)?;
     save_vec_as_image(
-        scale_disparities(&disparities),
+        scale_disparities_to_pixels(&disparities, MAX_DISPARITY),
         left_image.width(),
         left_image.height(),
         &output_path,
