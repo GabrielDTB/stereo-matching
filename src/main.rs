@@ -1,4 +1,4 @@
-use anyhow::Context;
+use anyhow::{bail, Context};
 use anyhow::{ensure, Result};
 use clap::Parser;
 use image::io::Reader as ImageReader;
@@ -277,6 +277,9 @@ struct Args {
 fn main() -> Result<()> {
     let args = Args::parse();
     let output_path = args.output;
+    let (output_name, output_extension) = output_path
+        .rsplit_once('.')
+        .context("Output path must have file extension, none was found.")?;
     let ground_truth = match args.ground_truth {
         Some(path) => Some(get_ground_truth_disparities(path, MAX_DISPARITY)?),
         _ => {
@@ -312,7 +315,7 @@ fn main() -> Result<()> {
                 .collect::<Vec<_>>(),
             left_image.width(),
             left_image.height(),
-            &format!("error_map_{output_path}"),
+            &format!("{output_name}.error_map.{output_extension}"),
         )?;
 
         let bounds = calculate_in_bounds_map(&ground_truth, left_image.width());
@@ -323,7 +326,7 @@ fn main() -> Result<()> {
                 .collect::<Vec<_>>(),
             left_image.width(),
             left_image.height(),
-            &format!("bounds_{output_path}"),
+            &format!("{output_name}.bounds_map.{output_extension}"),
         )?;
     }
 
