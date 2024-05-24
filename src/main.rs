@@ -211,22 +211,8 @@ fn save_vec_as_image(
     Ok(image.save_with_format(filename, image::ImageFormat::Png)?)
 }
 
-/// Calculates the error rate of computed disparities to the ground truth.
-/// A difference up to plus or minus 1 is deemed okay.
-fn calculate_error_rate(disparities: &Vec<u64>, ground_truth: &Vec<u64>) -> f64 {
-    let error_count: u64 = disparities
-        .iter()
-        .zip(
-            ground_truth
-                .iter()
-                .map(|&x| (x as f64 / 4.0).round() as u64),
-        )
-        .map(|(&a, b)| if a.abs_diff(b) > 1 { 1 } else { 0 })
-        .sum();
-    error_count as f64 / disparities.len() as f64
-}
-
 /// Calculates the error map of computed disparities to the ground truth.
+/// The disparity values should be real disparities, not pixel values.
 /// A difference up to plus or minus 1 is deemed okay.
 fn calculate_error_map(disparities: &Vec<u64>, ground_truth: &Vec<u64>) -> Vec<bool> {
     disparities
@@ -234,6 +220,14 @@ fn calculate_error_map(disparities: &Vec<u64>, ground_truth: &Vec<u64>) -> Vec<b
         .zip(ground_truth)
         .map(|(&a, &b)| if a.abs_diff(b) > 1 { true } else { false })
         .collect::<Vec<_>>()
+}
+
+fn calculate_error_rate(disparities: &Vec<u64>, ground_truth: &Vec<u64>) -> f64 {
+    calculate_error_map(disparities, ground_truth)
+        .iter()
+        .map(|&b| if b { 1 } else { 0 })
+        .sum::<u64>() as f64
+        / disparities.len() as f64
 }
 
 /// Calculates the map for points that can possibly have the correct disparity value,
