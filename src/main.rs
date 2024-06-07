@@ -222,12 +222,17 @@ fn calculate_error_map(disparities: &Vec<u64>, ground_truth: &Vec<u64>) -> Vec<b
         .collect::<Vec<_>>()
 }
 
-fn calculate_error_rate(disparities: &Vec<u64>, ground_truth: &Vec<u64>) -> f64 {
+fn calculate_error_rate(
+    disparities: &Vec<u64>,
+    ground_truth: &Vec<u64>,
+    valid_pixels: &Vec<bool>,
+) -> f64 {
     calculate_error_map(disparities, ground_truth)
         .iter()
-        .map(|&b| if b { 1 } else { 0 })
+        .zip(valid_pixels)
+        .map(|(&b, &t)| if b && t { 1 } else { 0 })
         .sum::<u64>() as f64
-        / disparities.len() as f64
+        / (disparities.len() - valid_pixels.iter().filter(|&a| !a).count()) as f64
 }
 
 /// Calculates the map for points that can possibly have the correct disparity value,
@@ -248,6 +253,26 @@ fn calculate_in_bounds_map(ground_truth: &Vec<u64>, width: u32) -> Vec<bool> {
 /// current point must be occluded.
 /// For efficiency, we may use the calculate_in_bounds_map to reduce the number of points we traverse.
 /// Or, we might combine the two methods.
+
+fn calculate_valid_pixels(disparity_map: &Vec<u64>, width: u32) -> Vec<bool> {
+    let mut target_pixels: Vec<bool> = vec![false; disparity_map.len()];
+    let mut valid_pixels: Vec<bool> = vec![true; disparity_map.len()];
+    let in_bounds = calculate_in_bounds_map(disparity_map, width);
+
+    for i in 0..valid_pixels.len() {
+        if !(in_bounds.get(i).unwrap()) {
+            continue;
+        } else {
+            let location: usize = i - disparity_map.get(i).unwrap().clone() as usize;
+            match target_pixels[location] {
+                true => valid_pixels[i] = false,
+                false => target_pixels[i] = true,
+            }
+        }
+    }
+
+    valid_pixels
+}
 
 /// Calculates disparity map between two images
 #[derive(Parser, Debug)]
@@ -301,7 +326,8 @@ fn main() -> Result<()> {
     )?;
 
     if let Some(ground_truth) = ground_truth {
-        let error_rate = calculate_error_rate(&disparities, &ground_truth);
+        let valid_pixels = calculate_valid_pixels(&disparities, left_image.width());
+        let error_rate = calculate_error_rate(&disparities, &ground_truth, &valid_pixels);
         println!(
             "Error rate with window size {window_size}:\t{:.2}%",
             error_rate * 100.0
@@ -327,6 +353,16 @@ fn main() -> Result<()> {
             left_image.width(),
             left_image.height(),
             &format!("{output_name}.bounds_map.{output_extension}"),
+        )?;
+
+        save_vec_as_image(
+            valid_pixels
+                .iter()
+                .map(|&b| if b { 255 } else { 0 })
+                .collect::<Vec<_>>(),
+            left_image.width(),
+            left_image.height(),
+            &format!("{output_name}.validity_map.{output_extension}"),
         )?;
     }
 
