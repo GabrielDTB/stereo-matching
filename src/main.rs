@@ -254,19 +254,19 @@ fn calculate_in_bounds_map(ground_truth: &Vec<u64>, width: u32) -> Vec<bool> {
 /// For efficiency, we may use the calculate_in_bounds_map to reduce the number of points we traverse.
 /// Or, we might combine the two methods.
 
-fn calculate_valid_pixels(disparity_map: &Vec<u64>, width: u32) -> Vec<bool> {
-    let mut target_pixels: Vec<bool> = vec![false; disparity_map.len()];
-    let mut valid_pixels: Vec<bool> = vec![true; disparity_map.len()];
-    let in_bounds = calculate_in_bounds_map(disparity_map, width);
+fn calculate_valid_pixels(ground_truth: &Vec<u64>, width: u32) -> Vec<bool> {
+    let mut target_pixels: Vec<bool> = vec![false; ground_truth.len()];
+    let mut valid_pixels: Vec<bool> = vec![true; ground_truth.len()];
+    let in_bounds = calculate_in_bounds_map(ground_truth, width);
 
     for i in 0..valid_pixels.len() {
         if !(in_bounds.get(i).unwrap()) {
-            continue;
+            valid_pixels[i] = false;
         } else {
-            let location: usize = i - disparity_map.get(i).unwrap().clone() as usize;
+            let location: usize = i - ground_truth.get(i).unwrap().clone() as usize;
             match target_pixels[location] {
                 true => valid_pixels[i] = false,
-                false => target_pixels[i] = true,
+                false => target_pixels[location] = true,
             }
         }
     }
@@ -326,7 +326,7 @@ fn main() -> Result<()> {
     )?;
 
     if let Some(ground_truth) = ground_truth {
-        let valid_pixels = calculate_valid_pixels(&disparities, left_image.width());
+        let valid_pixels = calculate_valid_pixels(&ground_truth, left_image.width());
         let error_rate = calculate_error_rate(&disparities, &ground_truth, &valid_pixels);
         println!(
             "Error rate with window size {window_size}:\t{:.2}%",
