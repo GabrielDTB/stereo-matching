@@ -275,6 +275,35 @@ fn calculate_valid_pixels(ground_truth: &Vec<u64>, width: u32) -> Vec<bool> {
     valid_pixels
 }
 
+fn calculate_valid_pixels_using_iterators(ground_truth: &Vec<u64>, width: u32) -> Vec<bool> {
+    let width = width as usize;
+    ground_truth
+        .chunks_exact(width)
+        .map(|disparities| {
+            disparities
+                .into_iter()
+                .map(|&disparity| disparity as usize)
+                .enumerate()
+                .rev()
+        })
+        .map(|positions_disparities| {
+            let mut targets = vec![false; width];
+            positions_disparities
+                .map(|(position, disparity)| {
+                    if position >= disparity && !targets[position - disparity] {
+                        targets[position - disparity] = true;
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .map(|validities| validities.into_iter().rev())
+        .flatten()
+        .collect::<Vec<_>>()
+}
+
 /// Calculates disparity map between two images
 #[derive(Parser, Debug)]
 #[command(about, long_about = None)]
