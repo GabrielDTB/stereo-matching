@@ -259,7 +259,7 @@ fn calculate_valid_pixels(ground_truth: &Vec<u64>, width: u32) -> Vec<bool> {
     let mut valid_pixels = vec![true; ground_truth.len()];
     let in_bounds = calculate_in_bounds_map(ground_truth, width);
 
-    for i in 0..valid_pixels.len() {
+    for i in (0..valid_pixels.len()).rev() {
         if !in_bounds[i] {
             valid_pixels[i] = false;
         } else {
