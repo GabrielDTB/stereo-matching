@@ -255,18 +255,19 @@ fn calculate_in_bounds_map(ground_truth: &Vec<u64>, width: u32) -> Vec<bool> {
 /// Or, we might combine the two methods.
 
 fn calculate_valid_pixels(ground_truth: &Vec<u64>, width: u32) -> Vec<bool> {
-    let mut target_pixels: Vec<bool> = vec![false; ground_truth.len()];
-    let mut valid_pixels: Vec<bool> = vec![true; ground_truth.len()];
+    let mut target_pixels = vec![false; ground_truth.len()];
+    let mut valid_pixels = vec![true; ground_truth.len()];
     let in_bounds = calculate_in_bounds_map(ground_truth, width);
 
     for i in 0..valid_pixels.len() {
-        if !(in_bounds.get(i).unwrap()) {
+        if !in_bounds[i] {
             valid_pixels[i] = false;
         } else {
-            let location: usize = i - ground_truth.get(i).unwrap().clone() as usize;
-            match target_pixels[location] {
-                true => valid_pixels[i] = false,
-                false => target_pixels[location] = true,
+            let location = i - ground_truth[i] as usize;
+            if target_pixels[location] {
+                valid_pixels[i] = false;
+            } else {
+                target_pixels[location] = true;
             }
         }
     }
