@@ -304,6 +304,55 @@ fn calculate_valid_pixels_using_iterators(ground_truth: &Vec<u64>, width: u32) -
         .collect::<Vec<_>>()
 }
 
+fn census_transform(image: &[u8], padding: i64, height: i64, width: i64, x: i64, y: i64) -> u64 {
+    let mut descriptor: u64 = 0;
+
+    for final_x in (x - padding)..(x + padding) {
+        for final_y in (y - padding)..(y + padding) {
+            if x == final_x && y == final_y {
+                continue;
+            } else {
+                let neighbor_value = calculate_pixel_value(image, height, width, final_x, final_y);
+                descriptor <<= 1;
+                match neighbor_value >= image[point_to_index(x, y, width)] {
+                    true => descriptor |= 1,
+                    false => (),
+                }
+            }
+        }
+    }
+    descriptor
+}
+
+fn rank_transform(image: &[u8], padding: i64, height: i64, width: i64, x: i64, y: i64) -> u64 {
+    let mut neighborhood = vec![];
+
+    for final_x in (x - padding)..(x + padding) {
+        for final_y in (y - padding)..(y + padding) {
+            let pixel_value = calculate_pixel_value(image, height, width, final_x, final_y);
+            neighborhood.push(pixel_value);
+        }
+    }
+
+    neighborhood.sort();
+
+    let central_pixel_value = calculate_pixel_value(image, height, width, x, y);
+    let rank = neighborhood
+        .iter()
+        .position(|&val| val == central_pixel_value)
+        .unwrap_or(0);
+
+    rank as u64
+}
+
+fn calculate_pixel_value(image: &[u8], height: i64, width: i64, x: i64, y: i64) -> u8 {
+    if y >= 0 && y < height && x >= 0 && x < width {
+        image[point_to_index(x, y, width)]
+    } else {
+        0
+    }
+}
+
 /// Calculates disparity map between two images
 #[derive(Parser, Debug)]
 #[command(about, long_about = None)]
